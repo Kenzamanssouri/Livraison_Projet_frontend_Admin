@@ -89,7 +89,7 @@ export default function HomeScreen() {
               </Text>
               <TouchableOpacity
                 style={[styles.cell, styles.viewButton]}
-                onPress={() => router.push(`/vendeur/${vendeur.id}`)}
+                onPress={() => router.push(`/detailVendeur/${vendeur.id}`)}
               >
                 <Text style={styles.viewText}>Voir</Text>
               </TouchableOpacity>
