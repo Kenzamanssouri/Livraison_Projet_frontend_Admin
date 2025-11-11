@@ -1,180 +1,375 @@
-import axios from 'axios';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
+  FlatList,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+  View
+} from "react-native";
+import { Badge, Card } from "react-native-paper";
 
-export default function HomeScreen() {
-  const [vendeurs, setVendeurs] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function AdminDashboard() {
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [orders, setOrders] = useState<any[]>([]);
+const [users, setUsers] = useState<number>(0);
   const router = useRouter();
-  const [notificationCount, setNotificationCount] = useState(0);
+const [usersByRole, setUsersByRole] = useState<Record<string, number>>({});
+const [totalUsers, setTotalUsers] = useState<number>(0);
+const [ordersStats, setOrdersStats] = useState<any>(null);
 
+  // 🔹 Récupérer le token stocké
   useEffect(() => {
-    fetchVendeurs();
-    fetchNotifications(); // Appelle aussi cette fonction
-
+    const getToken = async () => {
+      let token: string | null = null;
+      if (Platform.OS === "web") {
+        token = await AsyncStorage.getItem("userToken");
+      } else {
+        token = await SecureStore.getItemAsync("userToken");
+      }
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+      setAccessToken(token);
+    };
+    getToken();
   }, []);
 
-  const fetchVendeurs = async () => {
+  // 🔹 Charger les commandes
+  const fetchCommandes = async () => {
     try {
-      const response = await axios.get('http://localhost:8082/api/vendeurs/paged?page=0&size=10');
-      setVendeurs(response.data.content);
-    } catch (error) {
-      console.error('Erreur de chargement des vendeurs :', error);
-    } finally {
-      setLoading(false);
+      const response = await fetch("http://localhost:8082/api/commandes");
+      if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
+      const data = await response.json();
+      console.log('data',data)
+      setOrders(data || []);debugger
+            console.log('order',orders)
+
+    } catch (err) {
+      console.error("Erreur chargement commandes:", err);
     }
   };
 
-  const fetchNotifications = async () => {
-    try {
-      const response = await axios.get('http://192.168.1.8:8082/api/notification');
-      setNotificationCount(response.data.length); // Ou filtre si tu veux seulement les non lues
-    } catch (error) {
-      console.error('Erreur de chargement des notifications :', error);
-    }
-  };
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#1D3D47" />
-      </View>
-    );
+ // 🔹 Charger le nombre total d’utilisateurs
+const fetchUsers = async () => {
+  try {
+    const response = await fetch("http://localhost:8082/api/utilisateurs/count");
+    if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
+    debugger
+    // ⚠️ si ton endpoint retourne un nombre brut (ex: 42)
+    const data = await response.text(); debugger
+    const total = parseInt(data, 10); // convertit la chaîne en nombre
+    debugger
+          console.log('total',total)
+
+    setUsers(total); // 👈 maintenant users contient bien le nombre
+    debugger
+          console.log('users',users)
+
+  } catch (err) {
+    console.error("Erreur chargement utilisateurs:", err);
   }
+};
+const fetchUsersByRole = async () => {
+  try {
+    const response = await fetch("http://localhost:8082/api/utilisateurs/by-role");
+    if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
+    const data = await response.json(); // { client: 10, delivery: 3, vendor: 5, admin: 2 }
+    setUsersByRole(data);
+    const total = Object.values(data).reduce((acc, n) => acc + n, 0);
+    setTotalUsers(total);
+  } catch (err) {
+    console.error("Erreur chargement utilisateurs par rôle:", err);
+  }
+};
+const fetchOrdersByStatus = async () => {
+  try {
+    const response = await fetch("http://localhost:8082/api/commandes/by-status");
+    if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
+    const data = await response.json();
+    setOrdersStats(data);
+  } catch (err) {
+    console.error("Erreur chargement commandes par statut:", err);
+  }
+};
+
+
+  useEffect(() => {
+    fetchCommandes();
+    fetchUsers();
+      fetchUsersByRole();
+      fetchOrdersByStatus();
+  }, []);
+
+  // 🔹 Déconnexion
+  const handleLogout = async () => {
+    if (Platform.OS === "web") {
+      await AsyncStorage.removeItem("userToken");
+    } else {
+      await SecureStore.deleteItemAsync("userToken");
+    }
+    router.replace("/login");
+  };
+
+  const getStatusBadge = (status: string) => {
+    const colors: any = {
+      pending: "#64748b",
+      confirmed: "#3b82f6",
+      preparing: "#f97316",
+      ready: "#a855f7",
+      delivering: "#14b8a6",
+      delivered: "#16a34a",
+      cancelled: "#ef4444",
+    };
+    return (
+      <Badge
+        style={{
+          backgroundColor: colors[status] || "#475569",
+          color: "#fff",
+        }}
+      >
+        {status}
+      </Badge>
+    );
+  };
+
+  const renderOrder = ({ item }: any) => (
+    <Card style={styles.orderCard}>
+      <View style={styles.orderRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.orderText}>Commande #{item.id}</Text>
+          <Text style={styles.orderText}>{item.restaurantName}</Text>
+        </View>
+        <View style={styles.orderStatus}>
+          <Text style={styles.orderText}>{item.total.toFixed(2)} €</Text>
+          {getStatusBadge(item.status)}
+        </View>
+      </View>
+    </Card>
+  );
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Header avec icône de notification */}
-      <View style={styles.header}>
-        <Text style={styles.headerText}>Liste des Vendeurs</Text>
-        <TouchableOpacity onPress={() => router.push('/NotificationsScreen')}>
-          <View style={styles.notifContainer}>
-            <Text style={styles.notifIcon}>🔔</Text>
-            {notificationCount > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{notificationCount}</Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      </View>
+    <ScrollView style={styles.background}>
+      <View style={styles.container}>
+        
 
-      {/* Tableau */}
-      <ScrollView horizontal>
-        <View>
-          {/* En-têtes du tableau */}
-          <View style={styles.tableHeader}>
-            <Text style={[styles.cell, styles.headerCell]}>Nom</Text>
-            <Text style={[styles.cell, styles.headerCell]}>Téléphone</Text>
-            <Text style={[styles.cell, styles.headerCell]}>Ville</Text>
-            <Text style={[styles.cell, styles.headerCell]}>Validé</Text>
-            <Text style={[styles.cell, styles.headerCell]}>Action</Text>
-          </View>
+        {/* 🔹 Statistiques principales */}
+        <View
+          style={[
+            styles.statsContainer,
+            { flexDirection: "row", justifyContent: "space-between" },
+          ]}
+        >
+          {/* Commandes totales */}
+          <Card style={{ flex: 0.48, borderRadius: 12, overflow: "hidden" }}>
+            <LinearGradient
+              colors={["#f97316", "#ef4444"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ padding: 15 }}
+            >
+              <Text style={styles.statLabel}>Commandes totales</Text>
+              <Text style={styles.statNumber}>{orders.length}</Text>
+            </LinearGradient>
+          </Card>
 
-          {/* Lignes */}
-          {vendeurs.map((vendeur: any) => (
-            <View key={vendeur.id} style={styles.tableRow}>
-              <Text style={styles.cell}>{vendeur.prenom} {vendeur.nom}</Text>
-              <Text style={styles.cell}>{vendeur.telephone}</Text>
-              <Text style={styles.cell}>{vendeur.ville}</Text>
-              <Text style={styles.cell}>
-                {vendeur.estValideParAdmin ? '✅' : '❌'}
+          {/* Revenu total */}
+          <Card style={{ flex: 0.48, borderRadius: 12, overflow: "hidden" }}>
+            <LinearGradient
+              colors={["#3b82f6", "#4f46e5"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ padding: 15 }}
+            >
+              <Text style={styles.statLabel}>Revenu total</Text>
+              <Text style={styles.statNumber}>
+                {orders
+                  .reduce((acc, o) => acc + (o.total || 0), 0)
+                  .toFixed(2)}{" "}
+                €
               </Text>
-              <TouchableOpacity
-                style={[styles.cell, styles.viewButton]}
-                onPress={() => router.push(`/detailVendeur/${vendeur.id}`)}
-              >
-                <Text style={styles.viewText}>Voir</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
+            </LinearGradient>
+          </Card>
         </View>
-      </ScrollView>
-    </View>
+  <View
+          style={[
+            styles.statsContainer,
+            { flexDirection: "row", justifyContent: "space-between" },
+          ]}
+        >
+        {/* 🔹 Utilisateurs totaux */}
+          <Card style={{ flex: 0.48, borderRadius: 12, overflow: "hidden" }}>
+  <LinearGradient
+    colors={["#10b981", "#059669"]}
+    start={{ x: 0, y: 0 }}
+    end={{ x: 1, y: 1 }}
+    style={{ padding: 15 }}
+  >
+    <Text style={styles.statLabel}>Utilisateurs</Text>
+    <Text  style={styles.statNumber}>{users}</Text>
+  </LinearGradient>
+</Card>
+
+</View>
+   {/* 🔹 Commandes par statut */}
+<Card style={{ borderRadius: 12, overflow: "hidden", marginBottom: 20, backgroundColor: "#1e293b", padding: 15 }}>
+  <Text style={[styles.sectionTitle, { marginBottom: 5 }]}>Commandes par statut</Text>
+  <Text style={{ color: "#cbd5e1", marginBottom: 10 }}>
+    Distribution des commandes
+  </Text>
+
+  {ordersStats?.ordersByStatus &&
+    Object.entries(ordersStats.ordersByStatus).map(([status, count]) => {
+      const statusLabels: Record<string, string> = {
+        EN_ATTENTE: "En attente",
+        ACCEPTEE: "Acceptée",
+        EN_PREPARATION: "En préparation",
+        EN_ROUTE: "En route",
+        LIVREE: "Livrée",
+        ANNULEE: "Annulée",
+      };
+
+      const statusColors: Record<string, string> = {
+        EN_ATTENTE: "#64748b",
+        ACCEPTEE: "#3b82f6",
+        EN_PREPARATION: "#f97316",
+        EN_ROUTE: "#a855f7",
+        LIVREE: "#16a34a",
+        ANNULEE: "#ef4444",
+      };
+
+      const total = ordersStats.totalOrders || 1;
+      const percentage = ((count / total) * 100).toFixed(0);
+
+      return (
+        <View key={status} style={{ marginBottom: 10 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <Text style={{ color: "#f1f5f9" }}>{statusLabels[status]}</Text>
+            <Text style={{ color: "#f1f5f9" }}>{count}</Text>
+          </View>
+
+          {/* Barre de progression */}
+          <View style={{ backgroundColor: "#334155", borderRadius: 10, height: 8, marginTop: 4 }}>
+            <View
+              style={{
+                backgroundColor: statusColors[status],
+                width: `${percentage}%`,
+                height: 8,
+                borderRadius: 10,
+              }}
+            />
+          </View>
+        </View>
+      );
+    })}
+</Card>
+    
+{/* 🔹 Répartition des utilisateurs par rôle */}
+<Card style={{ borderRadius: 12, overflow: "hidden", marginBottom: 20, backgroundColor: "#1e293b", padding: 15 }}>
+  <Text style={[styles.sectionTitle, { marginBottom: 5 }]}>Utilisateurs par rôle</Text>
+  <Text style={{ color: "#cbd5e1", marginBottom: 10 }}>
+    Distribution des utilisateurs
+  </Text>
+
+  {/* Liste des rôles */}
+  {usersByRole &&
+    Object.entries(usersByRole).map(([role, count]) => {
+      const roleLabels: Record<string, string> = {
+        client: "Clients",
+        delivery: "Livreurs",
+        vendor: "Vendeurs",
+        admin: "Administrateurs",
+      };
+
+      const roleColors: Record<string, string> = {
+        client: "#f97316", // orange
+        delivery: "#3b82f6", // bleu
+        vendor: "#10b981", // vert
+        admin: "#8b5cf6", // violet
+      };
+
+      const total = totalUsers || 1;
+      const percentage = ((count / total) * 100).toFixed(0);
+
+      return (
+        <View key={role} style={{ marginBottom: 10 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <Text style={{ color: "#f1f5f9" }}>{roleLabels[role]}</Text>
+            <Text style={{ color: "#f1f5f9" }}>{count}</Text>
+          </View>
+
+          {/* Barre de progression */}
+          <View style={{ backgroundColor: "#334155", borderRadius: 10, height: 8, marginTop: 4 }}>
+            <View
+              style={{
+                backgroundColor: roleColors[role],
+                width: `${percentage}%`,
+                height: 8,
+                borderRadius: 10,
+              }}
+            />
+          </View>
+        </View>
+      );
+    })}
+</Card>
+
+        {/* 🔹 Liste des commandes récentes */}
+        <Text style={styles.sectionTitle}>Commandes récentes</Text>
+        <FlatList
+          data={orders}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderOrder}
+        />
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  notifContainer: {
-    position: 'relative',
-    padding: 4,
-  },
-  badge: {
-    position: 'absolute',
-    right: -2,
-    top: -4,
-    backgroundColor: 'red',
-    borderRadius: 10,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    minWidth: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  background: { flex: 1, backgroundColor: "#0f172a" },
+  container: { padding: 20 },
   header: {
-    paddingTop: 50,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#1e40af",
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
   },
-  headerText: {
+  title: { fontSize: 22, fontWeight: "700", color: "#fff" },
+  statsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 20,
+    flexWrap: "wrap",
+  },
+  statLabel: { color: "#f1f5f9", fontSize: 16 },
+  statNumber: { color: "#f1f5f9", fontSize: 22, fontWeight: "700" },
+  sectionTitle: {
+    color: "#f1f5f9",
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "700",
+    marginBottom: 10,
   },
-  notifIcon: {
-    fontSize: 24,
+  orderCard: {
+    backgroundColor: "#1e293b",
+    marginBottom: 10,
+    borderRadius: 10,
+    padding: 10,
   },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#eee',
-    paddingVertical: 10,
+  orderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderColor: '#ccc',
-    paddingVertical: 8,
-  },
-  cell: {
-    width: 120,
-    paddingHorizontal: 8,
-    textAlign: 'left',
-  },
-  headerCell: {
-    fontWeight: 'bold',
-  },
-  viewButton: {
-    backgroundColor: '#1D3D47',
-    borderRadius: 4,
-    alignItems: 'center',
-  },
-  viewText: {
-    color: '#fff',
-    paddingVertical: 4,
-  },
+  orderText: { color: "#e2e8f0" },
+  orderStatus: { alignItems: "flex-end" },
 });

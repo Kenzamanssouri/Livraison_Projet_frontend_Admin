@@ -1,6 +1,7 @@
 // app/_layout.tsx
+import React, { useEffect, useState } from "react";
 import { Stack, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { Provider as PaperProvider } from "react-native-paper";
 
 export default function RootLayout() {
   const router = useRouter();
@@ -12,7 +13,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (isMounted) {
-      const userIsLoggedIn = false; // Remplace par ton vrai contrôle d'authentification
+      const userIsLoggedIn = false; // 👉 Remplace par ton vrai contrôle d'authentification
       if (!userIsLoggedIn) {
         router.replace("/login");
       }
@@ -20,6 +21,8 @@ export default function RootLayout() {
   }, [isMounted]);
 
   return (
-    <Stack screenOptions={{ headerShown: false }} />
+    <PaperProvider>
+      <Stack screenOptions={{ headerShown: false }} />
+    </PaperProvider>
   );
 }

@@ -1,33 +1,48 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
 import axios from 'axios';
 import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-const NotificationsScreen = ({ navigation }) => {
+const NotificationsScreen = () => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const API_URL = 'http://192.168.1.8:8082/api/notification'; // Corrigé le nom du endpoint
-  const router = useRouter(); // Use router for navigation
+  const API_URL = 'http://localhost:8082/api/notification';
+  const router = useRouter();
 
   useEffect(() => {
-    const fetchNotifications = async () => {
-      try {
-        const response = await axios.get(API_URL);
-        setNotifications(response.data);
-      } catch (error) {
-        console.error('Error fetching notifications:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchNotifications();
   }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      const response = await axios.get(API_URL);
+      setNotifications(response.data);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNotificationPress = async (item) => {
+    try {
+      // Step 1: Mark as opened
+      await axios.put(`${API_URL}/${item.id}/open`);
+
+      // Step 2: Remove from the list
+      setNotifications((prev) => prev.filter(n => n.id !== item.id));
+
+      // Step 3: Navigate to detail screen
+      router.push(`/detailVendeur/${item.idObject}`);
+    } catch (error) {
+      console.error('Error updating notification:', error);
+    }
+  };
 
   const renderItem = ({ item }) => (
     <TouchableOpacity
       style={styles.notificationItem}
-      onPress={() =>  router.push(`/detailVendeur/${item.idObject}`)}
+      onPress={() => handleNotificationPress(item)}
     >
       <View style={styles.row}>
         <Text style={styles.cellTitle}>{item.title}</Text>
@@ -49,7 +64,7 @@ const NotificationsScreen = ({ navigation }) => {
       <Text style={styles.title}>Notifications</Text>
       <FlatList
         data={notifications}
-        keyExtractor={(item, index) => index.toString()}
+        keyExtractor={(item) => item.id.toString()}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
       />
